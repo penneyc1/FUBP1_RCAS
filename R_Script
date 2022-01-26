@@ -1,0 +1,296 @@
+library(RCAS)
+
+setwd("~/Experiments/PC666/RCAS_Analysis/files")
+
+##WT_Only##
+queryRegions <- importBed(filePath = "WT_stringent_intersect")
+gff <- importGtf(filePath = "gencodeV29pri-UCSC-tRNAs-ERCC-phiX.gtf")
+WT_overlaps <- as.data.table(queryGff(queryRegions = queryRegions, gffData = gff))
+
+biotype_col <- grep('gene_type', colnames(WT_overlaps), value = T)
+df <- WT_overlaps[,length(unique(queryIndex)), by = biotype_col]
+colnames(df) <- c("feature", "count")
+df$percent <- round(df$count / length(queryRegions) * 100, 1)
+df <- df[order(count, decreasing = TRUE)]
+ggplot2::ggplot(df, aes(x = reorder(feature, -percent), y = percent)) + 
+  ggtitle("PC666 WT Reads - Gene Types") +
+  geom_bar(stat = 'identity', aes(fill = feature)) + 
+  geom_label(aes(y = percent + 0.5), label = df$count) + 
+  labs(x = 'transcript feature', y = paste0('percent overlap (n = ', length(queryRegions), ')')) + 
+  theme_bw(base_size = 14) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+####
+txdbFeatures <- getTxdbFeaturesFromGRanges(gff)
+summary <- summarizeQueryRegions(queryRegions = queryRegions, 
+                                 txdbFeatures = txdbFeatures)
+df <- data.frame(summary)
+df$percent <- round((df$count / length(queryRegions)), 3) * 100
+df$feature <- rownames(df)
+ggplot2::ggplot(df, aes(x = reorder(feature, -percent), y = percent)) + 
+  geom_bar(stat = 'identity', aes(fill = feature)) + 
+  geom_label(aes(y = percent + 3), label = df$count) + ggtitle("PC666 WT Reads - Transcript Features")
+  labs(x = 'transcript feature', y = paste0('percent overlap (n = ', length(queryRegions), ')')) + 
+  theme_bw(base_size = 14) + 
+  theme(axis.text.x = element_text(angle = 90))
+  
+##
+
+dt <- getTargetedGenesTable(queryRegions = queryRegions,                            txdbFeatures = txdbFeatures)
+dt <- dt[order(transcripts, decreasing = TRUE)]
+knitr::kable(dt[1:10,])
+cvgF <- getFeatureBoundaryCoverage(queryRegions = queryRegions, 
+                                   featureCoords = txdbFeatures$transcripts, 
+                                   flankSize = 1000, 
+                                   boundaryType = 'fiveprime')
+cvgT <- getFeatureBoundaryCoverage(queryRegions = queryRegions, 
+                                   featureCoords = txdbFeatures$transcripts, 
+                                   flankSize = 1000, 
+                                   boundaryType = 'threeprime')
+cvgF$boundary <- 'fiveprime'
+cvgT$boundary <- 'threeprime'
+df <- rbind(cvgF, cvgT)
+ggplot2::ggplot(df, aes(x = bases, y = meanCoverage)) + 
+  geom_ribbon(fill = 'lightgreen', 
+              aes(ymin = meanCoverage - standardError * 1.96, 
+                  ymax = meanCoverage + standardError * 1.96)) + 
+  geom_line(color = 'black') + ggtitle("PC666 WT Reads - Coverage Profile") +
+  facet_grid( ~ boundary) + theme_bw(base_size = 14) 
+
+cvgList <- calculateCoverageProfileList(queryRegions = queryRegions, 
+                                        targetRegionsList = txdbFeatures, 
+                                        sampleN = 10000)
+
+ggplot2::ggplot(cvgList, aes(x = bins, y = meanCoverage)) + 
+  geom_ribbon(fill = 'lightgreen', 
+              aes(ymin = meanCoverage - standardError * 1.96, 
+                  ymax = meanCoverage + standardError * 1.96)) + 
+  geom_line(color = 'black') + theme_bw(base_size = 14) +
+  facet_wrap( ~ feature, ncol = 3)  + ggtitle("PC666 WT Reads - Coverage Profiles")
+
+motifResults <- runMotifDiscovery(queryRegions = queryRegions, 
+                                  resizeN = 15,
+                                  genomeVersion = 'hg38', motifWidth = 6,
+                                  motifN = 5, nCores = 1)
+
+
+ggseqlogo::ggseqlogo(motifResults$matches_query) + ggtitle("PC666 WT Reads - Top 5 Enriched Motifs")
+summary <- getMotifSummaryTable(motifResults)
+knitr::kable(summary)
+
+##
+
+library(gprofiler2)
+
+WT_overlaps <- as.data.table(queryGff(queryRegions = queryRegions, gffData = gff))
+targetedGenes <- unique(WT_overlaps$gene_name)
+
+res <- RCAS::findEnrichedFunctions(targetGenes = targetedGenes, 'hsapiens')
+res <- res[order(res$p_value),]
+resGO <- res[grep('GO:BP', res$source),]
+subset <- resGO[1:10,c(3,11,10)]
+row.names(subset) <- NULL
+write.csv(subset, "PC666 WT Reads - Functional enrichment analysis.csv")
+
+###
+###
+###
+
+##R3K_Only##
+
+queryRegions <- importBed(filePath = "R3K_stringent_intersect")
+gff <- importGtf(filePath = "gencodeV29pri-UCSC-tRNAs-ERCC-phiX.gtf")
+R3K_overlaps <- as.data.table(queryGff(queryRegions = queryRegions, gffData = gff))
+biotype_col <- grep('gene_type', colnames(R3K_overlaps), value = T)
+df <- R3K_overlaps[,length(unique(queryIndex)), by = biotype_col]
+colnames(df) <- c("feature", "count")
+df$percent <- round(df$count / length(queryRegions) * 100, 1)
+df <- df[order(count, decreasing = TRUE)]
+ggplot2::ggplot(df, aes(x = reorder(feature, -percent), y = percent)) + 
+  ggtitle("PC666 R3K Reads - Feature Types") +
+  geom_bar(stat = 'identity', aes(fill = feature)) + 
+  geom_label(aes(y = percent + 0.5), label = df$count) + 
+  labs(x = 'transcript feature', y = paste0('percent overlap (n = ', length(queryRegions), ')')) + 
+  theme_bw(base_size = 14) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+#####
+
+txdbFeatures <- getTxdbFeaturesFromGRanges(gff)
+summary <- summarizeQueryRegions(queryRegions = queryRegions, 
+                                 txdbFeatures = txdbFeatures)
+df <- data.frame(summary)
+df$percent <- round((df$count / length(queryRegions)), 3) * 100
+df$feature <- rownames(df)
+ggplot2::ggplot(df, aes(x = reorder(feature, -percent), y = percent)) + 
+  geom_bar(stat = 'identity', aes(fill = feature)) + 
+  geom_label(aes(y = percent + 3), label = df$count) + ggtitle("PC666 R3K Reads - Transcript Features")
+labs(x = 'transcript feature', y = paste0('percent overlap (n = ', length(queryRegions), ')')) + 
+  theme_bw(base_size = 14) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+##
+
+dt <- getTargetedGenesTable(queryRegions = queryRegions,                            txdbFeatures = txdbFeatures)
+dt <- dt[order(transcripts, decreasing = TRUE)]
+knitr::kable(dt[1:10,])
+cvgF <- getFeatureBoundaryCoverage(queryRegions = queryRegions, 
+                                   featureCoords = txdbFeatures$transcripts, 
+                                   flankSize = 1000, 
+                                   boundaryType = 'fiveprime')
+cvgT <- getFeatureBoundaryCoverage(queryRegions = queryRegions, 
+                                   featureCoords = txdbFeatures$transcripts, 
+                                   flankSize = 1000, 
+                                   boundaryType = 'threeprime')
+cvgF$boundary <- 'fiveprime'
+cvgT$boundary <- 'threeprime'
+df <- rbind(cvgF, cvgT)
+ggplot2::ggplot(df, aes(x = bases, y = meanCoverage)) + 
+  geom_ribbon(fill = 'lightgreen', 
+              aes(ymin = meanCoverage - standardError * 1.96, 
+                  ymax = meanCoverage + standardError * 1.96)) + 
+  geom_line(color = 'black') + ggtitle("PC666 R3K Reads - Coverage Profile") +
+  facet_grid( ~ boundary) + theme_bw(base_size = 14) 
+
+###
+
+queryRegions <- importBed(filePath = "R3K_stringent_intersect")
+#txdbFeatures <- getTxdbFeaturesFromGRanges(gff)
+cvgList <- calculateCoverageProfileList(queryRegions = queryRegions, 
+                                        targetRegionsList = txdbFeatures, sampleN = 10000)
+
+ggplot2::ggplot(cvgList, aes(x = bins, y = meanCoverage)) + 
+  geom_ribbon(fill = 'lightgreen', 
+              aes(ymin = meanCoverage - standardError * 1.96, 
+                  ymax = meanCoverage + standardError * 1.96)) + 
+  geom_line(color = 'black') + theme_bw(base_size = 14) +
+  facet_wrap( ~ feature, ncol = 3)  + ggtitle("PC666 R3K Reads - Coverage Profiles")
+
+motifResults <- runMotifDiscovery(queryRegions = queryRegions, 
+                                  resizeN = 15,
+                                  genomeVersion = 'hg38', motifWidth = 6,
+                                  motifN = 5, nCores = 1)
+
+
+ggseqlogo::ggseqlogo(motifResults$matches_query) + ggtitle("PC666 R3K Reads - Top 5 Enriched Motifs")
+summary <- getMotifSummaryTable(motifResults)
+knitr::kable(summary)
+###
+
+library(gprofiler2)
+queryRegions <- importBed(filePath = "R3K_stringent_intersect")
+R3K_overlaps <- as.data.table(queryGff(queryRegions = queryRegions, gffData = gff))
+targetedGenes <- unique(R3K_overlaps$gene_name)
+
+res <- RCAS::findEnrichedFunctions(targetGenes = targetedGenes, 'hsapiens')
+res <- res[order(res$p_value),]
+resGO <- res[grep('GO:BP', res$source),]
+subset <- resGO[1:10,c(3,11,10)]
+row.names(subset) <- NULL
+write.csv(subset, "PC666 R3K Reads - Functional enrichment analysis.csv")
+subset
+
+
+
+
+
+
+##R430C_Only##
+
+queryRegions <- importBed(filePath = "R430C_stringent_intersect")
+gff <- importGtf(filePath = "gencodeV29pri-UCSC-tRNAs-ERCC-phiX.gtf")
+
+R430C_overlaps <- as.data.table(queryGff(queryRegions = queryRegions, gffData = gff))
+biotype_col <- grep('gene_type', colnames(R430C_overlaps), value = T)
+df <- R430C_overlaps[,length(unique(queryIndex)), by = biotype_col]
+colnames(df) <- c("feature", "count")
+df$percent <- round(df$count / length(queryRegions) * 100, 1)
+df <- df[order(count, decreasing = TRUE)]
+ggplot2::ggplot(df, aes(x = reorder(feature, -percent), y = percent)) + 
+  ggtitle("PC666 R430C Reads - Feature Types") +
+  geom_bar(stat = 'identity', aes(fill = feature)) + 
+  geom_label(aes(y = percent + 0.5), label = df$count) + 
+  labs(x = 'transcript feature', y = paste0('percent overlap (n = ', length(queryRegions), ')')) + 
+  theme_bw(base_size = 14) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+#####
+gff <- importGtf(filePath = "gencodeV29pri-UCSC-tRNAs-ERCC-phiX.gtf")
+queryRegions <- importBed(filePath = "R430C_stringent_intersect")
+txdbFeatures <- getTxdbFeaturesFromGRanges(gff)
+summary <- summarizeQueryRegions(queryRegions = queryRegions, 
+                                 txdbFeatures = txdbFeatures)
+df <- data.frame(summary)
+df$percent <- round((df$count / length(queryRegions)), 3) * 100
+df$feature <- rownames(df)
+ggplot2::ggplot(df, aes(x = reorder(feature, -percent), y = percent)) + 
+  geom_bar(stat = 'identity', aes(fill = feature)) + 
+  geom_label(aes(y = percent + 3), label = df$count) + ggtitle("PC666 R430C Reads - Transcript Features")
+labs(x = 'transcript feature', y = paste0('percent overlap (n = ', length(queryRegions), ')')) + 
+  theme_bw(base_size = 14) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+##
+
+dt <- getTargetedGenesTable(queryRegions = queryRegions,                            txdbFeatures = txdbFeatures)
+dt <- dt[order(transcripts, decreasing = TRUE)]
+knitr::kable(dt[1:10,])
+cvgF <- getFeatureBoundaryCoverage(queryRegions = queryRegions, 
+                                   featureCoords = txdbFeatures$transcripts, 
+                                   flankSize = 1000, 
+                                   boundaryType = 'fiveprime')
+cvgT <- getFeatureBoundaryCoverage(queryRegions = queryRegions, 
+                                   featureCoords = txdbFeatures$transcripts, 
+                                   flankSize = 1000, 
+                                   boundaryType = 'threeprime')
+cvgF$boundary <- 'fiveprime'
+cvgT$boundary <- 'threeprime'
+df <- rbind(cvgF, cvgT)
+ggplot2::ggplot(df, aes(x = bases, y = meanCoverage)) + 
+  geom_ribbon(fill = 'lightgreen', 
+              aes(ymin = meanCoverage - standardError * 1.96, 
+                  ymax = meanCoverage + standardError * 1.96)) + 
+  geom_line(color = 'black') + ggtitle("PC666 R430C Reads - Coverage Profile") +
+  facet_grid( ~ boundary) + theme_bw(base_size = 14) 
+
+###
+
+queryRegions <- importBed(filePath = "R430C_stringent_intersect")
+gff <- importGtf(filePath = "gencodeV29pri-UCSC-tRNAs-ERCC-phiX.gtf")
+txdbFeatures <- getTxdbFeaturesFromGRanges(gff)
+cvgList <- calculateCoverageProfileList(queryRegions = queryRegions, 
+                                        targetRegionsList = txdbFeatures, sampleN = 10000)
+
+ggplot2::ggplot(cvgList, aes(x = bins, y = meanCoverage)) + 
+  geom_ribbon(fill = 'lightgreen', 
+              aes(ymin = meanCoverage - standardError * 1.96, 
+                  ymax = meanCoverage + standardError * 1.96)) + 
+  geom_line(color = 'black') + theme_bw(base_size = 14) +
+  facet_wrap( ~ feature, ncol = 3)  + ggtitle("PC666 R430C Reads - Coverage Profiles")
+
+motifResults <- runMotifDiscovery(queryRegions = queryRegions, 
+                                  resizeN = 15,
+                                  genomeVersion = 'hg38', motifWidth = 6,
+                                  motifN = 5, nCores = 1)
+
+
+ggseqlogo::ggseqlogo(motifResults$matches_query) + ggtitle("PC666 R430C Reads - Top 5 Enriched Motifs")
+summary <- getMotifSummaryTable(motifResults)
+knitr::kable(summary)
+
+###
+
+library(gprofiler2)
+queryRegions <- importBed(filePath = "R430C_stringent_intersect")
+
+
+R430C_overlaps <- as.data.table(queryGff(queryRegions = queryRegions, gffData = gff))
+targetedGenes <- unique(R430C_overlaps$gene_name)
+
+res <- RCAS::findEnrichedFunctions(targetGenes = targetedGenes, 'hsapiens')
+res <- res[order(res$p_value),]
+resGO <- res[grep('GO:BP', res$source),]
+subset <- resGO[1:10,c(3,11,10)]
+row.names(subset) <- NULL
+write.csv(subset, "PC666 R430C Reads - Functional enrichment analysis.csv")
+subset
